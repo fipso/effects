@@ -30,6 +30,31 @@ radial :: proc(center: Vec2, r: f32, colors: ..Color) -> sk.Paint {
 	set_stops(&p, colors)
 	return p
 }
+// Gradient around center, starting at 3 o'clock, clockwise.
+sweep :: proc(center: Vec2, colors: ..Color) -> sk.Paint {
+	p := sk.Paint{color = 0xff000000, shader = .Sweep, sh = {center.x, center.y, 0, 0}}
+	set_stops(&p, colors)
+	return p
+}
+// The paint adding its light to what is below instead of covering it.
+additive :: proc(p: sk.Paint) -> sk.Paint {
+	p := p
+	p.blend = i32(sk.Blend.Plus) + 1
+	return p
+}
+// The paint drawing only [a, b] of a path's length (0..1): lines that draw themselves.
+trimmed :: proc(p: sk.Paint, a, b: f32) -> sk.Paint {
+	p := p
+	// the shim reads {0, 0} and {0, 1} as "whole path"
+	p.trim = {clamp01(a), b >= 1 ? 1 : max(clamp01(b), 1e-5)}
+	return p
+}
+// The paint's edges blurred by sigma: glows, soft shadows.
+soft :: proc(p: sk.Paint, sigma: f32) -> sk.Paint {
+	p := p
+	p.blur = sigma
+	return p
+}
 // Gradient with explicit stop positions.
 with_stops :: proc(p: sk.Paint, stops: ..Stop) -> sk.Paint {
 	p := p
@@ -126,6 +151,7 @@ Xf :: struct {
 	invert:   f32, // 0..1
 	blend:    Maybe(sk.Blend), // how the contents land on what is below
 	post:     Post, // a filter over the contents' pixels: rgb_split, glitch, zoom_blur …
+	glow:     Glow, // bloom: the bright parts blurred and added back (see post.odin)
 	clip:     Maybe(Rect), // clip contents to this rect (in the group's coordinates)
 	radius:   f32, // corner radius of clip
 	bounds:   Maybe(Rect), // hint for the layer size when fading or blurring
@@ -171,8 +197,14 @@ group_begin :: proc(xf: Xf) -> bool {
 	}
 	m, graded := grade_matrix(xf)
 	_, blended := xf.blend.?
-	if o < 0.998 || xf.blur > 0.05 || xf.mblur.x > 0.05 || xf.mblur.y > 0.05 || graded || blended || xf.post.sksl != nil {
+	glowing := xf.glow.amount > 0.003 && (xf.glow.radius > 0.05 || xf.glow.streak > 0.05)
+	if o < 0.998 || xf.blur > 0.05 || xf.mblur.x > 0.05 || xf.mblur.y > 0.05 || graded || blended || xf.post.sksl != nil || glowing {
 		l := sk.Layer{alpha = o, blur = xf.blur, blur_xy = xf.mblur, has_matrix = b32(graded), colors = m}
+		if glowing {
+			g := xf.glow
+			if g.radius > 0.05 do l.glow = {g.radius, g.radius, g.threshold, g.amount}
+			if g.streak > 0.05 do l.glow2 = {g.streak, max(g.radius * 0.08, 0.6), g.threshold, g.amount * (g.streak_amount > 0 ? g.streak_amount : 0.6)}
+		}
 		if b, ok := xf.blend.?; ok do l.blend = i32(b) + 1
 		post := xf.post
 		if post.sksl != nil {
@@ -182,7 +214,7 @@ group_begin :: proc(xf: Xf) -> bool {
 			l.sksl_radius = post.radius
 		}
 		if b, ok := xf.bounds.?; ok {
-			pad := xf.blur * 3 + max(xf.mblur.x, xf.mblur.y) * 3 + post.radius
+			pad := xf.blur * 3 + max(xf.mblur.x, xf.mblur.y) * 3 + post.radius + max(xf.glow.radius, xf.glow.streak) * 3
 			l.bounds = {b.x - pad, b.y - pad, b.w + 2 * pad, b.h + 2 * pad}
 		}
 		sk.canvas_save_layer(cv, &l)

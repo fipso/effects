@@ -9,7 +9,8 @@ timeline.
 ./build.sh                                  # shim + CLI + editor → build/
 build/effects-edit projects/demo            # preview, timeline, hot reload
 build/effects render projects/demo          # → projects/demo/.effects/demo.mp4
-build/effects still projects/demo 2.5 7.6   # PNGs → .effects/stills/
+build/effects render projects/blazed --crf 16 --tune grain  # dark, grainy films: keep the grain
+build/effects still projects/demo 2.5 7.6   # PNGs → .effects/stills/ (--release 1: from the optimized build)
 build/effects mix projects/demo             # the sounds alone → .effects/demo.wav
 build/effects bench projects/demo           # ms per frame, one thread
 build/effects beats song.wav                # hits, tempo and drops, to cut to
@@ -27,6 +28,39 @@ edge scans, burns, melts, datamoshing, shots opening inside numbers). The edits 
 internal testing only: run their
 `fetch.sh` first; the showreel borrows the first one's track and footage.
 
+`blazed` is a one-minute film for BLAZED.sh (containers and scripts
+deployed onto Ethereum nodes), again without footage, built on one idea: a
+request is a line between your code and the chain, and this film shortens it
+to nothing. In one shot a call crosses the black, its answer comes back
+late, the camera moves back to everyone else's lines, and ours is reeled in
+until your code lands in the chain on the music's drop.
+Then what that buys: the machine (the node and your sandboxes on one deck,
+a socket between them) and the fleet it is one of; three pictures with
+their number set into a corner (`claim` in `main.odin`): a race of a
+thousand RPC calls, the mempool as it lands, the whole chain as one line
+read at five points; a push that goes through a pipeline and comes up on
+the panel in 18 s; and Claude fixing a script through the MCP server
+(`term.odin` draws the terminals, `panel.odin` rebuilds the real panel,
+`dof` in `main.odin` is the shallow depth of field). It is cut onto the
+bars of a real track, "Code Switch" by Punch Deck (CC BY; credit it where
+the film is published, see `projects/blazed/assets/README.md`): the track's
+breakdown is the way in, its drop the landing, its last note the mark;
+`music.odin` holds the five numbers to change for another track. `sfx.odin`
+adds a few low sounds under it. The film is near-black, so render it with
+`build/effects render projects/blazed --crf 16 --tune grain` (about five
+minutes on 8 cores): at the default settings the encoder flattens the fine
+grain that keeps its dark gradients from banding. The numbers, the commands
+and the copy are the site's; `DEPLOY_SECONDS` in `main.odin` is its
+"running in 18s".
+
+`fable` is the other project in this repository: a one-minute self-portrait of
+the model that wrote it, with no footage, no images and no samples. Its
+score (32 bars at 128 bpm) is rendered by `fx`'s synth from lists of notes,
+and the pictures read the same lists, so they hit what the music hits. One
+scene shows the editor with its own source (`#load`ed into the video) next
+to a preview of itself. `build/effects render projects/fable` takes about
+13 minutes on 8 cores (3,600 frames, most of them with full-screen shaders).
+
 ## Layout
 
 - `shim/` — a C ABI over Skia (`sk.h`): surfaces, paths, gradients, layers
@@ -37,13 +71,26 @@ internal testing only: run their
 - `fx/` — the library scenes are written with:
   - `anim` — `prog`, `ep`, `win`, eases, `spring`, `stagger`, `typed`, keyframes
   - `draw` — shapes, text, icons, images, `group` (move/scale/tilt/fade/blur,
-    grade, blend or filter what's inside its scope), `frosted`, `bake`
-    (render a static layer once)
+    grade, blend, filter or make glow what's inside its scope), `frosted`,
+    `bake` (render a static layer once); paints: `linear`, `radial`, `sweep`,
+    and `additive`, `trimmed` (lines that draw themselves), `soft` on any of
+    them
+    (gradients and shaders are dithered, so slow dark ones don't band;
+    drawn through `bake` at less than full size they lose that)
   - `post` — grading (`contrast`, `sat`, `tint`, `invert`, … on any group)
     and pixel filters: `rgb_split`, `glitch`, `zoom_blur`, `pixelate`,
-    `duotone`, `scanlines`, `halftone`, `dither`, or any SkSL via `post`.
-    A group's post runs before its grade; to filter graded footage (dither
-    after a gray grade), put the post on a group around it
+    `duotone`, `scanlines`, `halftone`, `dither`, `lens` (barrel distortion
+    with color fringes), `shockwave`, `kaleido`, `warp`, `stretch`, or any
+    SkSL via `post`. A group's post runs before its grade; to filter graded
+    footage (dither after a gray grade), put the post on a group around it.
+    `Xf.glow` is bloom (and anamorphic streaks) made of Skia's own blur
+  - `shade` — pictures made by shaders: `shader_scaled` (SkSL drawn small
+    and scaled up: smooth fields at a fraction of the cost), `nebula`,
+    `orb` (a raymarched iridescent body), `tunnel`
+  - `space` — a little 3D: `Cam`, `project`, `line3`, `bokeh` (dots with
+    depth of field), `spark`, `fib_sphere`, `gauss3`, `spline3`
+  - `type` — text letter by letter: `letters` (staggered rises, blurs,
+    spins), `scramble` (text being decoded), `glyphs`
   - `edit` — for cutting to music: `beat`, `pulse`, `hit`, `shake`,
     `camera`, `flash`, `letterbox`, `transition` (whips, zoom, spin, glitch,
     blur, fade between overlapping scenes), `ramp` (speed ramps), `slam`,
@@ -53,6 +100,11 @@ internal testing only: run their
     files: `onsets` (hits per band), `drops`, `spectrum`
   - `synth` — sounds made by code: `whoosh`, `boom`, `riser`, `click`,
     `sub_drop`
+  - `music` — a small offline studio for scores made by code: `play` (a
+    subtractive synth: unison oscillators, filter and amp envelopes, drive,
+    vibrato), drums (`kick`, `clap`, `snare`, `hat`, `crash`, `impact`,
+    `sweep_noise`), buses with `duck` (side-chain pumping), `sweep_filter`,
+    `reverb`, `echo`, `limit`, and `levels` for pictures that follow them
   - `layout` — a small flexbox for mockups: `layout`, `box`, `item`, `txt`,
     `glyph`, `picture`, `spacer`; every element can be animated and found
     again with `rect_of(id)`
@@ -62,7 +114,8 @@ internal testing only: run their
     `caption`, `eyebrow`, `mark`, `vignette`, `grain`
   - `theme` — colors and fonts (`LIERMANN` by default)
   - `vo` — voice-over word timings from a v3 `timeline.json`: `W`, `WE`, `SC`
-  - `video` — `Video`, `Scene`, `Cue`, `Shot`, `fade`, `cue`
+  - `video` — `Video`, `Scene`, `Cue`, `Shot`, `fade`, `cue`; `Video.master`
+    wraps all scenes in one group (the film's lens, glow, grade and camera)
   - `icons` — the app's icon set (generated from v3/src/icons.js)
 - `host/` — shared by CLI and editor: compiles a project into a shared
   library, loads it, applies `timing.json`.
@@ -142,6 +195,26 @@ automated over time with `gain`, `rate` (tape stops) and `cutoff` (filter
 sweeps), each a `proc(t: f32) -> f32` of video time. The renderers mix
 everything to 48 kHz stereo with a soft limiter at -1 dBFS.
 
+A score can be code too. A generator fills its buffer with whatever it
+mixes from notes and drum hits:
+
+```odin
+PAD :: fx.Patch{wave = .Saw, voices = 7, detune = 30, width = 0.9, attack = 0.3, sustain = 0.8, release = 0.9, cutoff = 3000, gain = 0.2}
+song :: proc(out: []fx.Sample) {
+	pads := make([]fx.Sample, len(out)); defer delete(pads)
+	kicks := [?]f32{0, 0.5, 1, 1.5}
+	for n in ([?]f32{50, 53, 57, 60}) do fx.play(pads, PAD, at = 0, dur = 2, midi = n)
+	for t in kicks do fx.kick(out, t)
+	fx.duck(pads, kicks[:], 0.6, 0.3) // the pump
+	fx.send(out, pads)
+	fx.limit(out)
+}
+SOUNDS := [?]fx.Sound{{name = "score", gen = song, dur = 2}}
+```
+
+Everything is deterministic, and a 60 s piece with a dozen buses renders in
+about two seconds. `projects/fable/music.odin` is a whole arrangement.
+
 To cut to music: `fx.onsets(file, .Bass)` finds the hits (kicks, 808s;
 `.High` for snares and hats), `fx.times` moves them to video time, and
 `fx.pulse(beats, t)` / `fx.beat(beats, t)` turn them into motion. Results
@@ -179,6 +252,11 @@ are shown over the preview.
   averages ~32 ms with grain, vignette and backdrop on.
 - Full render of the 12.4 s demo at 60 fps: ~20 s with 16 workers; x264
   encoding is the bottleneck, not drawing.
+- SkSL on the CPU is the expensive thing: a full-screen field of warped
+  noise or a raymarched body costs ~2 s per 1080p frame on one thread.
+  `shader_scaled` draws such pictures at a third or half of the resolution
+  (0.1–0.5 s); a post filter reading each pixel three times, ~0.05 s; glow,
+  being Skia's blur, ~0.02 s.
 - The showreel (30.6 s, 60 fps, shaders and footage): 50 s. The Palantir
   edit (48.6 s, 30 fps, footage on every frame): 62 s, peaking at ~15 GB:
   each worker has an encoder and up to two footage decoders (~1 GB in all),

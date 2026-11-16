@@ -1,5 +1,6 @@
 #include "sk.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -159,6 +160,9 @@ static SkPaint to_paint(const sk_paint* p) {
 			sh = SkGradientShader::MakeSweep(p->sh[0], p->sh[1], colors, ps, n);
 		}
 		paint.setShader(sh);
+		// 8 bits a channel are too few for a slow, dark gradient: without
+		// dithering its levels show as bands.
+		paint.setDither(true);
 		// The paint's alpha scales the shader, so keep only the alpha of color.
 		paint.setColor(SkColorSetA(SK_ColorBLACK, SkColorGetA(p->color)));
 	}
@@ -213,6 +217,14 @@ int32_t sk_canvas_save_layer(sk_canvas* c, const sk_layer* l) {
 			SkRuntimeEffectBuilder b(fx, std::move(data));
 			filter = SkImageFilters::RuntimeShader(b, l->sksl_radius, "src", filter);
 		}
+	}
+	for (const float* g : {l->glow, l->glow2}) {
+		if (g[0] <= 0 && g[1] <= 0) continue;
+		// bright = (c - threshold) * gain / (1 - threshold), clamped by the filter
+		float th = std::clamp(g[2], 0.0f, 0.95f), k = (g[3] > 0 ? g[3] : 1) / (1 - th);
+		float m[20] = {k, 0, 0, 0, -th * k, 0, k, 0, 0, -th * k, 0, 0, k, 0, -th * k, 0, 0, 0, 1, 0};
+		auto bright = SkImageFilters::ColorFilter(SkColorFilters::Matrix(m), filter);
+		filter = SkImageFilters::Blend(SkBlendMode::kPlus, filter, SkImageFilters::Blur(g[0], g[1], bright));
 	}
 	if (filter) paint.setImageFilter(filter);
 
@@ -556,6 +568,7 @@ int32_t sk_canvas_draw_sksl(sk_canvas* c, const char* sksl, const float* uniform
 	memcpy(data->writable_data(), uniforms, std::min(need, n_uniforms * sizeof(float)));
 	SkPaint paint;
 	paint.setShader(fx->makeShader(data, nullptr, 0));
+	paint.setDither(true);
 	C(c)->drawRect(R(x, y, w, h), paint);
 	return 1;
 }

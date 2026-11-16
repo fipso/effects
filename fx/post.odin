@@ -183,6 +183,151 @@ half4 main(float2 p) {
 	return amount >= 1 ? d : mix(src.eval(p), d, amount);
 }`
 
+// ---------------------------------------------------------------- glow
+
+// Bloom for a group: what is brighter than threshold is blurred by radius
+// and added back, amount strong. streak adds a second, wide horizontal blur
+// (an anamorphic lens flare) at streak_amount of amount. Runs after the
+// group's blur and post; made of Skia's own blur, so cheap on the CPU. Best
+// on a group that paints its own background (the glow adds alpha too).
+Glow :: struct {
+	radius:        f32, // blur sigma in px
+	amount:        f32, // 0 = off; 1 adds the blurred highlights at full strength
+	threshold:     f32, // 0..1: only what is brighter glows
+	streak:        f32, // horizontal sigma of the streak pass, 0 = none
+	streak_amount: f32, // of amount, default 0.6
+}
+
+glow :: proc(radius: f32 = 24, amount: f32 = 0.8, threshold: f32 = 0.5, streak: f32 = 0) -> Glow {
+	return {radius = radius, amount = amount, threshold = threshold, streak = streak}
+}
+
+// ---------------------------------------------------------------- lenses
+
+// A lens over the group: barrel distortion (distort > 0 bulges, < 0
+// pinches), colors pulled apart toward the edges by chroma px at the
+// corners, and the edges darkened by vignette (0..1).
+lens :: proc(distort: f32 = 0.06, chroma: f32 = 6, vignette: f32 = 0) -> Post {
+	if abs(distort) < 0.001 && chroma < 0.05 && vignette < 0.005 do return {}
+	return post(LENS, abs(distort) * S.w * 0.5 + chroma, S.w, S.h, distort, chroma, vignette)
+}
+
+LENS :: `
+uniform shader src;
+uniform float2 size;
+uniform float k;
+uniform float chroma;
+uniform float vig;
+half4 main(float2 p) {
+	float2 c = size * 0.5;
+	float2 u = (p - c) / c.y;
+	float r2 = dot(u, u);
+	// the corners stay where they are and the middle comes closer (or, pinching, the other way round)
+	float corner = (c.x * c.x) / (c.y * c.y) + 1;
+	float2 q = c + u * (1 + k * (r2 - (k > 0 ? corner : 0))) * c.y;
+	float2 d = normalize(u + 1e-5) * chroma * r2 * 0.3;
+	half4 a = src.eval(q - d);
+	half4 b = src.eval(q);
+	half4 e = src.eval(q + d);
+	half3 col = half3(a.r, b.g, e.b);
+	col *= half(1 - vig * smoothstep(0.3, 2.6, r2));
+	return half4(col, b.a);
+}`
+
+// A ring-shaped ripple pushing pixels outward: the shock of an impact.
+// radius and width in px, strength in px at the crest.
+shockwave :: proc(center: Vec2, radius, width, strength: f32) -> Post {
+	if abs(strength) < 0.05 || radius <= 0 do return {}
+	return post(SHOCKWAVE, abs(strength), center.x, center.y, radius, max(width, 1), strength)
+}
+
+SHOCKWAVE :: `
+uniform shader src;
+uniform float2 c;
+uniform float radius;
+uniform float width;
+uniform float strength;
+half4 main(float2 p) {
+	float2 v = p - c;
+	float d = length(v);
+	float x = (d - radius) / width;
+	float w = exp(-x * x) * strength;
+	float2 n = v / max(d, 1e-3);
+	half4 a = src.eval(p - n * w * 1.25);
+	half4 b = src.eval(p - n * w);
+	half4 e = src.eval(p - n * w * 0.75);
+	return half4(a.r, b.g, e.b, b.a) * half(1 + 0.6 * exp(-x * x) * min(abs(strength) / 40, 1));
+}`
+
+// The group folded into n mirrored wedges around center, turned by angle
+// (degrees): a kaleidoscope.
+kaleido :: proc(center: Vec2, n: f32 = 6, angle: f32 = 0, zoom: f32 = 1) -> Post {
+	if n < 1 do return {}
+	return post(KALEIDO, max(S.w, S.h), center.x, center.y, n, angle * math.RAD_PER_DEG, zoom, S.w, S.h)
+}
+
+KALEIDO :: `
+uniform shader src;
+uniform float2 c;
+uniform float n;
+uniform float rot;
+uniform float zoom;
+uniform float2 size;
+half4 main(float2 p) {
+	float2 v = (p - c) / zoom;
+	float r = length(v);
+	float seg = 3.14159265 / n;
+	float a = atan(v.y, v.x) + rot;
+	a = abs(mod(a, 2 * seg) - seg);
+	float2 q = c + r * float2(cos(a - rot), sin(a - rot));
+	// fold back what leaves the stage, so the wedges are always full
+	q = abs(q);
+	q = size - abs(size - q);
+	return src.eval(q);
+}`
+
+// Pixels pushed around by flowing noise: heat haze, liquid, a melting
+// picture. amount in px, scale the size of the swirls in px.
+warp :: proc(amount: f32, scale: f32 = 240, speed: f32 = 0.4, seed: f32 = 0) -> Post {
+	if abs(amount) < 0.05 do return {}
+	return post(WARP, abs(amount), amount, max(scale, 1), S.t * speed + seed * 37)
+}
+
+WARP :: `
+uniform shader src;
+uniform float amount;
+uniform float scale;
+uniform float t;
+float h(float2 p) { p = fract(p * float2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
+float n(float2 p) {
+	float2 i = floor(p), f = fract(p);
+	f = f * f * (3 - 2 * f);
+	return mix(mix(h(i), h(i + float2(1, 0)), f.x), mix(h(i + float2(0, 1)), h(i + float2(1, 1)), f.x), f.y);
+}
+half4 main(float2 p) {
+	float2 q = p / scale;
+	float2 d = float2(n(q + float2(t, 0)) + 0.5 * n(q * 2.1 - t), n(q + float2(5.2, t * 0.9)) + 0.5 * n(q * 2.1 + t + 3.1)) - 0.75;
+	return src.eval(p + d * amount * 1.33);
+}`
+
+// Everything right of (or, with a negative width, left of) edge is the
+// column of pixels at the edge, smeared: a stretched frame.
+stretch :: proc(edge: f32, horizontal := true, forward := true) -> Post {
+	return post(STRETCH, max(S.w, S.h), edge, horizontal ? 1 : 0, forward ? 1 : -1)
+}
+
+STRETCH :: `
+uniform shader src;
+uniform float edge;
+uniform float horiz;
+uniform float dir;
+half4 main(float2 p) {
+	float2 q = p;
+	if (horiz > 0.5) { q.x = dir > 0 ? min(p.x, edge) : max(p.x, edge); }
+	else { q.y = dir > 0 ? min(p.y, edge) : max(p.y, edge); }
+	return src.eval(q);
+}`
+
 // ---------------------------------------------------------------- grading
 
 RGBA :: struct {

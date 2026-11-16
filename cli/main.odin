@@ -1,9 +1,9 @@
 // effects: renders a video project.
 //
 //   effects render <project> [--out f.mp4] [--from s] [--to s] [--fps n]
-//                            [--workers n] [--scale k] [--crf n] [--preset p]
+//                            [--workers n] [--scale k] [--crf n] [--preset p] [--tune t]
 //                            [--encoder auto|x264|nvenc]
-//   effects still  <project> <t>... [--out dir] [--scale k]
+//   effects still  <project> <t>... [--out dir] [--scale k] [--release 1]
 //   effects mix    <project> [--out f.wav] [--from s] [--to s]
 //   effects bench  <project> [--frames n]
 //   effects build  <project>
@@ -32,8 +32,8 @@ import "effects:host"
 import sk "effects:sk"
 
 USAGE :: `usage:
-  effects render <project> [--out f.mp4] [--from s] [--to s] [--fps n] [--workers n] [--scale k] [--crf n] [--preset p] [--encoder auto|x264|nvenc]
-  effects still  <project> <t>... [--out dir] [--scale k]
+  effects render <project> [--out f.mp4] [--from s] [--to s] [--fps n] [--workers n] [--scale k] [--crf n] [--preset p] [--tune t] [--encoder auto|x264|nvenc]
+  effects still  <project> <t>... [--out dir] [--scale k] [--release 1]
   effects mix    <project> [--out f.wav] [--from s] [--to s]
   effects bench  <project> [--frames n]
   effects build  <project>
@@ -49,10 +49,12 @@ Opts :: struct {
 	scale:    f32,
 	crf:      int,
 	preset:   string,
+	tune:     string, // x264 -tune: grain keeps fine noise in dark gradients (bigger files)
 	encoder:  string,
 	frames:   int,
 	band:     fx.Band,
 	threshold: f32,
+	release:  bool, // stills from the optimized build (slow to compile, fast to draw)
 }
 
 NVENC_WORKERS :: 12
@@ -70,7 +72,7 @@ main :: proc() {
 	p, found := host.open(o.dir)
 	if !found do os.exit(1)
 
-	release := o.cmd == "render" || o.cmd == "bench"
+	release := o.cmd == "render" || o.cmd == "bench" || o.cmd == "mix" || o.release
 	start := time.tick_now()
 	lib, built, log := host.build(&p, release)
 	if !built {
@@ -131,6 +133,8 @@ parse_args :: proc(args: []string) -> (o: Opts, ok: bool) {
 			o.crf = int(num(v))
 		case "--preset":
 			o.preset = v
+		case "--tune":
+			o.tune = v
 		case "--encoder":
 			switch v {
 			case "auto", "x264", "nvenc":
@@ -141,6 +145,8 @@ parse_args :: proc(args: []string) -> (o: Opts, ok: bool) {
 			}
 		case "--frames":
 			o.frames = int(num(v))
+		case "--release":
+			o.release = v != "0"
 		case "--threshold":
 			o.threshold = num(v)
 		case "--band":
@@ -228,6 +234,7 @@ Chunk :: struct {
 	seg:      string,
 	crf:      int,
 	preset:   string,
+	tune:     string,
 	encoder:  string, // x264 or nvenc
 	threads:  int, // x264 threads
 	done:     ^int,
@@ -251,6 +258,7 @@ render_chunk :: proc(ch: ^Chunk) {
 		codec = fmt.tprintf("-c:v h264_nvenc -preset %s -tune hq -rc constqp -qp %d -bf 3", preset, ch.crf)
 	} else {
 		codec = fmt.tprintf("-c:v libx264 -threads %d -preset %s -crf %d", ch.threads, ch.preset, ch.crf)
+		if ch.tune != "" do codec = fmt.tprintf("%s -tune %s", codec, ch.tune)
 	}
 	// Primaries and transfer go on the input: since ffmpeg 7 encoders take
 	// them from the frames and ignore output options (only the matrix,
@@ -319,7 +327,7 @@ render :: proc(p: ^host.Project, o: Opts) {
 		if a >= b do break
 		seg := fx.join({seg_dir, fmt.tprintf("seg%03d.mp4", i)}, context.allocator)
 		enc_threads := max(2, os.get_processor_core_count() / workers)
-		chunks[i] = {v, a, b, t0, fps, w, h, o.scale, seg, o.crf, o.preset, encoder, enc_threads, &done, false}
+		chunks[i] = {v, a, b, t0, fps, w, h, o.scale, seg, o.crf, o.preset, o.tune, encoder, enc_threads, &done, false}
 		fmt.sbprintfln(&list, "file '%s'", seg)
 		append(&threads, thread.create_and_start_with_poly_data(&chunks[i], render_chunk))
 	}

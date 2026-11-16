@@ -57,6 +57,8 @@ Layer :: struct {
 	uniforms:      [^]f32,
 	n_uniforms:    i32,
 	sksl_radius:   f32,
+	glow:          [4]f32, // sigma_x, sigma_y, threshold, gain: bright parts blurred and added back
+	glow2:         [4]f32, // a second pass (streaks)
 }
 
 Text_Style :: struct {

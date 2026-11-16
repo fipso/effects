@@ -31,6 +31,7 @@ Video :: struct {
 	cues:       []Cue,
 	marks:      []f32, // times the editor shows on its ruler and snaps to (beats)
 	overlay:    proc(t: f32), // drawn above all scenes
+	master:     proc(t: f32) -> Xf, // a group around all scenes: the film's grade, glow, lens, camera
 
 	// Filled in by fx.video for the renderer.
 	render:     proc(f: ^Frame),
@@ -146,11 +147,21 @@ render_frame :: proc(f: ^Frame) {
 	clear(&S.groups)
 	layout_reset()
 	sk.canvas_clear(f.cv, v.background)
-	for &s in v.scenes {
+	mastered := v.master != nil
+	shown := true
+	if mastered {
+		// the background is part of the master group, so its glow and filters see it
+		xf := v.master(f.t)
+		if xf.bounds == nil do xf.bounds = stage()
+		shown = group_begin(xf)
+		if shown do rect(stage(), v.background)
+	}
+	if shown do for &s in v.scenes {
 		if s.draw == nil || f.t < s.start || f.t >= s.start + s.dur do continue
 		lt := f.t - s.start
 		s.draw({t = f.t, lt = lt, p = s.dur > 0 ? lt / s.dur : 0, start = s.start, dur = s.dur, data = s.data})
 	}
+	if mastered do end_group(shown)
 	if v.overlay != nil do v.overlay(f.t)
 	sk.frame_end()
 }

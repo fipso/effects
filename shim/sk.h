@@ -56,6 +56,12 @@ typedef struct {
 	const float* uniforms;
 	int32_t n_uniforms;
 	float sksl_radius;
+	// Glow added on top of the content (after blur and sksl): what is brighter
+	// than threshold, blurred and added back. sigma_x, sigma_y, threshold
+	// (0..1), gain; both sigmas 0 = off. Two passes, so a soft bloom can be
+	// combined with wide anamorphic streaks (a large sigma_x, a small sigma_y).
+	float glow[4];
+	float glow2[4];
 } sk_layer;
 
 typedef struct {
