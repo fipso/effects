@@ -9,7 +9,7 @@ timeline.
 ./build.sh                                  # shim + CLI + editor → build/
 build/effects-edit projects/demo            # preview, timeline, hot reload
 build/effects render projects/demo          # → projects/demo/.effects/demo.mp4
-build/effects render projects/blazed --crf 16 --tune grain  # dark, grainy films: keep the grain
+build/effects render projects/demo --crf 16 --tune grain  # dark, grainy films: keep the grain
 build/effects still projects/demo 2.5 7.6   # PNGs → .effects/stills/ (--release 1: from the optimized build)
 build/effects mix projects/demo             # the sounds alone → .effects/demo.wav
 build/effects bench projects/demo           # ms per frame, one thread
@@ -28,32 +28,7 @@ edge scans, burns, melts, datamoshing, shots opening inside numbers). The edits 
 internal testing only: run their
 `fetch.sh` first; the showreel borrows the first one's track and footage.
 
-`blazed` is a one-minute film for BLAZED.sh (containers and scripts
-deployed onto Ethereum nodes), again without footage, built on one idea: a
-request is a line between your code and the chain, and this film shortens it
-to nothing. In one shot a call crosses the black, its answer comes back
-late, the camera moves back to everyone else's lines, and ours is reeled in
-until your code lands in the chain on the music's drop.
-Then what that buys: the machine (the node and your sandboxes on one deck,
-a socket between them) and the fleet it is one of; three pictures with
-their number set into a corner (`claim` in `main.odin`): a race of a
-thousand RPC calls, the mempool as it lands, the whole chain as one line
-read at five points; a push that goes through a pipeline and comes up on
-the panel in 18 s; and Claude fixing a script through the MCP server
-(`term.odin` draws the terminals, `panel.odin` rebuilds the real panel,
-`dof` in `main.odin` is the shallow depth of field). It is cut onto the
-bars of a real track, "Code Switch" by Punch Deck (CC BY; credit it where
-the film is published, see `projects/blazed/assets/README.md`): the track's
-breakdown is the way in, its drop the landing, its last note the mark;
-`music.odin` holds the five numbers to change for another track. `sfx.odin`
-adds a few low sounds under it. The film is near-black, so render it with
-`build/effects render projects/blazed --crf 16 --tune grain` (about five
-minutes on 8 cores): at the default settings the encoder flattens the fine
-grain that keeps its dark gradients from banding. The numbers, the commands
-and the copy are the site's; `DEPLOY_SECONDS` in `main.odin` is its
-"running in 18s".
-
-`fable` is the other project in this repository: a one-minute self-portrait of
+`fable` is the one project in this repository: a one-minute self-portrait of
 the model that wrote it, with no footage, no images and no samples. Its
 score (32 bars at 128 bpm) is rendered by `fx`'s synth from lists of notes,
 and the pictures read the same lists, so they hit what the music hits. One
